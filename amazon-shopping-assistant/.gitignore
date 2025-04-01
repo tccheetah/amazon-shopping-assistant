@@ -1,0 +1,24 @@
+# Environment and virtual environment
+.env
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+# Logs
+*.log
+logs/
+
+# Browser automation artifacts
+.playwright-cache/
+
+# VS Code specific files
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
