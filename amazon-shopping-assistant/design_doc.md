@@ -2,7 +2,7 @@
 
 ## Overview
 
-This doc outlines the approach for the Amazon Shopping Assistant. I've implemented v0 with room for v1 and v2 enhancements afterrr.
+This doc outlines the approach for the Amazon Shopping Assistant. Started with v0 implementation and added v1 enhancements.
 
 ## Components
 
@@ -20,25 +20,26 @@ User -> ConversationManager -> QueryParser -> AmazonNavigator -> BrowserManager 
 Handles browser automation with Playwright. Manages sessions and implements anti-detection.
 
 ### AmazonNavigator
-Navigates Amazon, applies filters, extracts product data. Built with flexible selectors.
+Navigates Amazon, applies filters, extracts product data. Fixed the "Unknown Title" issue by adding multiple fallback selectors and extraction approaches.
 
 ### QueryParser
-Converts natural language to structured params using regex for v0. AI parser is ready for v1.
+Converts natural language to structured params using regex. Extracts product type, price range, ratings, etc.
 
 ### ProductAnalyzer
-Ranks products using a weighted score system based on ratings, reviews, price, etc.
+Ranks products using weighted scoring based on ratings, reviews, price, etc. v1 adds better relevance scoring and improved recommendation explanations.
 
 ### ConversationManager
-Controls flow, maintains context, handles follow-ups, formats responses.
+Controls flow, maintains context, and handles follow-ups. v1 adds context tracking and better suggestions.
 
 ## Technical Decisions
 
 ### Why Playwright?
-- Cleaner and faster than Selenium from searches
+- Faster than Selenium
 - Better auto-waiting for elements
+- Cleaner API
 - Better handling of modern web features
 
-Web scraping alone would be too limited for interactive browsing.
+Web scraping alone would be too limited for interactive browsing imo.
 
 ### Detection Avoidance
 - Random delays between actions
@@ -46,7 +47,7 @@ Web scraping alone would be too limited for interactive browsing.
 - Mouse movement simulation
 - User agent config
 
-### Query Understanding (v0)
+### Query Understanding
 Using regex to extract:
 - Product type
 - Price range
@@ -55,34 +56,45 @@ Using regex to extract:
 - Keywords
 
 ### Ranking Algorithm
-Simple weighted scoring:
-- Rating (40%)
-- Reviews (20%) 
+Weighted scoring:
+- Rating (30%)
+- Reviews (20%)
 - Price (20%)
 - Prime (10%)
-- Relevance (10%)
+- Relevance (20%)
 
-## Version Roadmap from Lewis expanded
+## Version Roadmap
 
-### v0 (current)
+### v0 (original)
 - Basic filters
 - Regex parsing
 - Simple scoring
 - Basic conversation
 
-### v1 
-- Enable AI query parser (already coded)
-- Handle custom criteria
-- Better conversation context
-- Improved ranking
-- Enhanced fingerprinting
+### v1 (current)
+- Fixed product extraction with multiple selectors
+- Enhanced scoring system with better relevance matching
+- Improved recommendation explanations
+- Follow-up detection and context tracking
+- Better response formatting and suggestions
 
-### v2
+### v2 (future)
+- AI-powered query understanding
 - Planning and multi-step workflows
 - User preference learning
 - Proactive refinements
 - Comparative analysis
-- Self-improvement
+
+## v1 Implementation Notes
+
+Fixed critical issues:
+1. Solved "Unknown Title" bug with multiple fallback selectors in AmazonNavigator
+2. Enhanced ProductAnalyzer with better scoring that considers more factors
+3. Added follow-up detection to ConversationManager for more natural conversations
+4. Improved response formatting with contextual suggestions
+5. Added support for refining previous searches
+
+These changes maintain the same interfaces as v0 for backward compatibility while significantly improving functionality.
 
 ## Challenges & Solutions
 
@@ -93,7 +105,7 @@ Solution: Multiple fallback selectors for key elements
 Solution: Human-like behavior, random delays
 
 ### Ambiguous Queries
-Solution: Conservative parsing in v0, AI in v1
+Solution: Conservative parsing with better keyword extraction
 
 ## Testing Approach
 
@@ -104,7 +116,7 @@ Solution: Conservative parsing in v0, AI in v1
 ## Next Steps
 
 1. Complete unit tests 
-2. Add error recovery for common failures
-3. Enable AI parsing as v1 feature flag
-4. Improve response formatting
-5. Add browser fingerprinting enhancements
+2. Add error recovery for common failures as Lewis said
+3. Add AI-based query parsing for v2
+4. Implement product comparison feature
+5. Give user warning about the robot checker
