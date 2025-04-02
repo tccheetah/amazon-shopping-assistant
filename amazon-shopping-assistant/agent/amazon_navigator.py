@@ -156,15 +156,41 @@ class AmazonNavigator:
                     break
                 
                 try:
-                    # Extract product details
+                    # FIX: Multiple approaches to extract title correctly
+                    title = "Unknown Title"
+                    
+                    # Approach 1: Standard title selector
                     title_element = element.query_selector("h2 a span")
+                    if title_element:
+                        title = title_element.inner_text()
+                    
+                    # Approach 2: Alternative selectors if the first one failed
+                    if title == "Unknown Title":
+                        alt_title_selectors = [
+                            "h2 .a-link-normal", 
+                            ".a-size-medium.a-color-base.a-text-normal",
+                            ".a-size-base-plus.a-color-base.a-text-normal"
+                        ]
+                        for selector in alt_title_selectors:
+                            alt_title_element = element.query_selector(selector)
+                            if alt_title_element:
+                                alt_title = alt_title_element.inner_text()
+                                if alt_title and len(alt_title) > 5:  # Ensure it's not empty or too short
+                                    title = alt_title
+                                    break
+                    
+                    # Approach 3: Try to get the title from the a tag's aria-label
+                    if title == "Unknown Title":
+                        a_element = element.query_selector("h2 a")
+                        if a_element:
+                            aria_label = a_element.get_attribute("aria-label")
+                            if aria_label and len(aria_label) > 5:
+                                title = aria_label
+                    
+                    # Extract price with multiple approaches
                     price_whole_element = element.query_selector(".a-price-whole")
                     price_fraction_element = element.query_selector(".a-price-fraction")
                     price_element = element.query_selector(".a-price .a-offscreen")
-                    rating_element = element.query_selector("span.a-icon-alt")
-                    reviews_element = element.query_selector("span.a-size-base.s-underline-text")
-                    
-                    title = title_element.inner_text() if title_element else "Unknown Title"
                     
                     # Try different price extraction methods
                     price = "Price not available"
@@ -173,12 +199,35 @@ class AmazonNavigator:
                     elif price_whole_element and price_fraction_element:
                         price = f"${price_whole_element.inner_text()}.{price_fraction_element.inner_text()}"
                     
-                    rating = rating_element.inner_text() if rating_element else "No rating"
-                    reviews = reviews_element.inner_text() if reviews_element else "0"
+                    # Extract rating with multiple approaches
+                    rating = "No rating"
+                    rating_element = element.query_selector("span.a-icon-alt")
+                    if rating_element:
+                        rating = rating_element.inner_text()
+                    
+                    # Alternative rating selector
+                    if rating == "No rating":
+                        alt_rating_element = element.query_selector(".a-icon-star-small .a-icon-alt")
+                        if alt_rating_element:
+                            rating = alt_rating_element.inner_text()
+                    
+                    # Extract reviews
+                    reviews = "0"
+                    reviews_element = element.query_selector("span.a-size-base.s-underline-text")
+                    if reviews_element:
+                        reviews = reviews_element.inner_text()
+                    
+                    # Alternative reviews selector
+                    if reviews == "0":
+                        alt_reviews_element = element.query_selector("a .a-size-base")
+                        if alt_reviews_element:
+                            reviews_text = alt_reviews_element.inner_text()
+                            if reviews_text and reviews_text.replace(',', '').isdigit():
+                                reviews = reviews_text
                     
                     # Extract numeric rating
                     rating_value = 0.0
-                    if rating:
+                    if rating != "No rating":
                         rating_match = re.search(r'(\d+(\.\d+)?)', rating)
                         if rating_match:
                             rating_value = float(rating_match.group(1))
@@ -186,10 +235,12 @@ class AmazonNavigator:
                     # Extract link
                     link_element = element.query_selector("h2 a")
                     link = link_element.get_attribute("href") if link_element else None
-                    full_link = f"{AMAZON_BASE_URL}{link}" if link else None
+                    full_link = f"{AMAZON_BASE_URL}{link}" if link and not link.startswith("http") else link
                     
                     # Extract Prime status
                     prime_element = element.query_selector("i.a-icon-prime")
+                    if not prime_element:
+                        prime_element = element.query_selector("span.aok-relative span.a-icon-prime")
                     has_prime = bool(prime_element)
                     
                     # Extract product image

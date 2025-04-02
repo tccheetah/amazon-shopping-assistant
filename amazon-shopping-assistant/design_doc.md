@@ -2,9 +2,9 @@
 
 ## Overview
 
-This doc outlines the approach for the Amazon Shopping Assistant. I've implemented v0 with hooks for v1 and v2 enhancements.
+This doc outlines the approach for the Amazon Shopping Assistant. I've implemented v0 with room for v1 and v2 enhancements afterrr.
 
-## Components (wrote on paper then generated)
+## Components
 
 ```
 User -> ConversationManager -> QueryParser -> AmazonNavigator -> BrowserManager -> Amazon.com
