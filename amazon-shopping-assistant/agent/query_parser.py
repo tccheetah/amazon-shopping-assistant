@@ -1,5 +1,4 @@
 import re
-import json
 import logging
 from typing import Dict, Any, Optional
 from openai import OpenAI
@@ -89,48 +88,3 @@ class QueryParser:
                 "prime_shipping": False,
                 "keywords": []
             }
-    
-    def parse_shopping_query_with_ai(self, query: str) -> Dict[str, Any]:
-        """
-        Parse natural language shopping query using OpenAI API.
-        This is more advanced and would be used in v1/v2 versions.
-        """
-        try:
-            prompt = f"""
-            Extract structured information from this shopping query. Return a JSON object with these fields:
-            - product_type: The main product category being searched for
-            - price_range: Object with min and max if specified
-            - rating_min: Minimum rating requested (1-5 scale)
-            - prime_shipping: Boolean indicating if Prime shipping is requested
-            - keywords: List of important features or attributes mentioned
-            
-            Shopping query: {query}
-            
-            Return ONLY the JSON output without explanation.
-            """
-            
-            response = self.client.chat.completions.create(
-                model="gpt-3.5-turbo",
-                messages=[
-                    {"role": "system", "content": "You extract structured data from shopping queries."},
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0
-            )
-            
-            result = response.choices[0].message.content
-            
-            # Parse JSON response
-            try:
-                parsed_json = json.loads(result)
-                logger.info(f"Parsed query with AI: {query}")
-                return parsed_json
-            except json.JSONDecodeError:
-                logger.warning(f"Failed to parse AI response as JSON: {result}")
-                # Fall back to regex parsing
-                return self.parse_shopping_query(query)
-                
-        except Exception as e:
-            logger.error(f"Failed to parse query with AI: {str(e)}")
-            # Fall back to regex parsing
-            return self.parse_shopping_query(query)

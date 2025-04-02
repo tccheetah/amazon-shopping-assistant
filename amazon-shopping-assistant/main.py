@@ -41,6 +41,7 @@ def main():
                 break
                 
             # Process the message
+            print("\nSearching Amazon...")
             result = conversation.process_message(user_input)
             print("\n" + result["response"])
             

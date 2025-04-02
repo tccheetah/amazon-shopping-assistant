@@ -41,9 +41,7 @@ class ConversationManager:
             if is_followup:
                 parsed_query = self.handle_followup_query(user_message)
             else:
-                # In v0, we use the basic parser. In v1, we could switch to AI-based parser
                 parsed_query = self.query_parser.parse_shopping_query(user_message)
-                # For v1/v2: parsed_query = self.query_parser.parse_shopping_query_with_ai(user_message)
                 
             self.current_query = parsed_query
             
@@ -96,8 +94,7 @@ class ConversationManager:
     
     def is_followup_query(self, message: str) -> bool:
         """Determine if a message is a follow-up to previous conversation"""
-        # Simple heuristics for follow-up detection in v0
-        # In v1/v2, this could use more sophisticated NLP
+        # Simple heuristics for follow-up detection
         
         # Check if this is the first message
         if len(self.conversation_history) < 2:
@@ -230,25 +227,27 @@ class ConversationManager:
             
             response_parts.append(product_details)
         
-        # Add suggestions for refinement
-        response_parts.append("\nYou can refine your search by saying things like:")
+        # Add suggestions for next steps
+        response_parts.append("\nYou can:")
         
+        # Add detail suggestion
+        response_parts.append("• Ask for more details about any product")
+        
+        # Add refined search suggestions based on context
         suggestions = []
+        
         if not parsed_query.get("prime_shipping"):
-            suggestions.append('"Show me options with Prime shipping"')
+            suggestions.append("• Filter for Prime shipping")
         
         price_max = parsed_query.get("price_range", {}).get("max")
         if price_max:
-            suggestions.append(f'"Find cheaper options under ${int(price_max * 0.8)}"')
+            suggestions.append(f"• Look for cheaper options under ${int(price_max * 0.8)}")
+        else:
+            suggestions.append("• Set a price range")
         
         if not parsed_query.get("rating_min") or parsed_query.get("rating_min") < 4:
-            suggestions.append('"Show me better rated products"')
+            suggestions.append("• Find better rated products")
             
-        # Add a couple of generic suggestions
-        if len(suggestions) < 2:
-            suggestions.append('"Show me more premium options"')
-            suggestions.append('"What about products with [specific feature]"')
-            
-        response_parts.append(" or ".join(suggestions))
+        response_parts.extend(suggestions)
         
         return "\n".join(response_parts)
