@@ -1,13 +1,14 @@
 import logging
 import math
-from typing import List, Dict, Any
+import re
+from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 class ProductAnalyzer:
     """
     Analyzes and ranks products based on user preferences and query parameters.
-    Enhanced with better scoring system and improved recommendation explanations.
+    Enhanced with better scoring system and advanced filtering capabilities.
     """
     def __init__(self):
         # Weights for different ranking factors (can be tuned)
@@ -20,10 +21,18 @@ class ProductAnalyzer:
         }
     
     def rank_products(self, products: List[Dict[str, Any]], parsed_query: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Rank products based on query parameters"""
+        """Rank products based on query parameters and apply advanced filtering"""
         try:
+            # First apply any advanced filters that weren't handled by Amazon
+            filtered_products = self._apply_advanced_filters(products, parsed_query)
+            
+            # If no products left after advanced filtering, return the original list
+            if not filtered_products and products:
+                logger.warning("Advanced filtering removed all products, using original results")
+                filtered_products = products
+            
             # Enhanced scoring system
-            for product in products:
+            for product in filtered_products:
                 score = 0
                 
                 # 1. Rating score (0-30 points based on weight)
@@ -56,7 +65,7 @@ class ProductAnalyzer:
                         
                     score += price_score * self.weights["price"]
                 
-                # 5. Title relevance score
+                # 5. Enhanced title relevance score with advanced matching
                 title = product.get('title', '').lower()
                 relevance_score = self._calculate_relevance_score(title, parsed_query)
                 score += relevance_score * self.weights["relevance"]
@@ -65,17 +74,69 @@ class ProductAnalyzer:
                 product['score'] = round(score, 2)
             
             # Sort by score, descending
-            ranked_products = sorted(products, key=lambda x: x.get('score', 0), reverse=True)
+            ranked_products = sorted(filtered_products, key=lambda x: x.get('score', 0), reverse=True)
             
-            logger.info(f"Ranked {len(ranked_products)} products")
+            logger.info(f"Ranked {len(ranked_products)} products with advanced filtering")
             return ranked_products
             
         except Exception as e:
             logger.error(f"Failed to rank products: {str(e)}")
             return products
     
+    def _apply_advanced_filters(self, products: List[Dict[str, Any]], parsed_query: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Apply advanced filters that go beyond Amazon's standard filters"""
+        try:
+            # Start with all products
+            filtered_products = products
+            
+            # Check for advanced rating threshold (beyond Amazon's whole-star filters)
+            exact_rating = parsed_query.get('exact_rating_min')
+            if exact_rating and exact_rating > 0:
+                filtered_products = [p for p in filtered_products 
+                                     if p.get('rating_value', 0) >= exact_rating]
+                logger.info(f"Applied exact rating filter >= {exact_rating}, {len(filtered_products)} products remaining")
+            
+            # Check for country of origin filter
+            origin_country = parsed_query.get('origin_country')
+            if origin_country:
+                country_matches = []
+                country_lower = origin_country.lower()
+                for product in filtered_products:
+                    title = product.get('title', '').lower()
+                    # Simple check for country mention in title
+                    if f"made in {country_lower}" in title or f"from {country_lower}" in title or f"{country_lower} made" in title:
+                        country_matches.append(product)
+                
+                # Only filter if we found at least one matching product
+                if country_matches:
+                    filtered_products = country_matches
+                    logger.info(f"Applied country of origin filter: {origin_country}, {len(filtered_products)} products remaining")
+            
+            # Check for material filter
+            material = parsed_query.get('material')
+            if material:
+                material_lower = material.lower()
+                filtered_products = [p for p in filtered_products
+                                     if material_lower in p.get('title', '').lower()]
+                logger.info(f"Applied material filter: {material}, {len(filtered_products)} products remaining")
+            
+            # Check for excluded terms
+            excluded_terms = parsed_query.get('excluded_terms', [])
+            if excluded_terms:
+                for term in excluded_terms:
+                    term_lower = term.lower()
+                    filtered_products = [p for p in filtered_products
+                                         if term_lower not in p.get('title', '').lower()]
+                logger.info(f"Applied excluded terms filter, {len(filtered_products)} products remaining")
+            
+            return filtered_products
+            
+        except Exception as e:
+            logger.error(f"Error applying advanced filters: {str(e)}")
+            return products
+    
     def _calculate_relevance_score(self, title: str, parsed_query: Dict[str, Any]) -> float:
-        """Calculate relevance score based on title match with query parameters"""
+        """Calculate relevance score based on enhanced title match with query parameters"""
         try:
             relevance_score = 0
             max_points = 20
@@ -85,16 +146,33 @@ class ProductAnalyzer:
             if product_type and product_type in title:
                 relevance_score += 5
             
-            # Match keywords
+            # Match keywords with higher precision
             keywords = parsed_query.get('keywords', [])
             keyword_matches = 0
             for keyword in keywords:
-                if keyword.lower() in title:
+                # More precise matching
+                keyword_lower = keyword.lower()
+                if keyword_lower in title:
+                    # Exact match gets more points
                     keyword_matches += 1
+                    # Bonus for exact whole word match
+                    word_boundary = r'\b' + re.escape(keyword_lower) + r'\b'
+                    if re.search(word_boundary, title):
+                        keyword_matches += 0.5
             
             if keywords:
                 keyword_score = min(10, (keyword_matches / len(keywords)) * 10)
                 relevance_score += keyword_score
+            
+            # Match origin country for bonus points
+            origin_country = parsed_query.get('origin_country')
+            if origin_country and origin_country.lower() in title:
+                relevance_score += 3
+            
+            # Match material for bonus points
+            material = parsed_query.get('material')
+            if material and material.lower() in title:
+                relevance_score += 3
             
             # Cap at max points
             return min(max_points, relevance_score)
@@ -108,9 +186,12 @@ class ProductAnalyzer:
         try:
             reasons = []
             
-            # Check rating
-            if product.get('rating_value', 0) >= 4:
-                reasons.append(f"high rating of {product.get('rating')}") 
+            # Check rating with exact threshold support
+            exact_rating = parsed_query.get('exact_rating_min')
+            if exact_rating and product.get('rating_value', 0) >= exact_rating:
+                reasons.append(f"meets your minimum rating of {exact_rating} stars")
+            elif product.get('rating_value', 0) >= 4:
+                reasons.append(f"high rating of {product.get('rating')}")
             
             # Check reviews
             review_count = product.get('review_count', 0)
@@ -127,6 +208,16 @@ class ProductAnalyzer:
             # Check Prime
             if product.get('has_prime', False) and parsed_query.get('prime_shipping', False):
                 reasons.append("Prime shipping")
+            
+            # Check country of origin
+            origin_country = parsed_query.get('origin_country')
+            if origin_country and origin_country.lower() in product.get('title', '').lower():
+                reasons.append(f"made in {origin_country}")
+            
+            # Check material
+            material = parsed_query.get('material')
+            if material and material.lower() in product.get('title', '').lower():
+                reasons.append(f"{material} material")
             
             # Check keywords matches
             keywords = parsed_query.get('keywords', [])
