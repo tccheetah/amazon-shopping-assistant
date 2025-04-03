@@ -115,7 +115,6 @@ Risks:
 ### Technical Debt Considerations
 - Plan refactor after v1 for scaling architecture
 - Schedule regular selector maintenance for Amazon UI changes
-- Allocate 20% of sprint capacity to testing & stability
 
 ## v1 Implementation Notes
 
@@ -128,8 +127,6 @@ Enhanced features added:
 6. Added follow-up detection to ConversationManager for more natural conversations
 7. Improved response formatting with contextual suggestions
 8. Added support for refining previous searches
-
-These changes maintain the same interfaces as v0 for backward compatibility while significantly improving functionality beyond what Amazon's filters directly support.
 
 ## Evaluation & Testing
 
