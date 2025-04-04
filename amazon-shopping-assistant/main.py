@@ -1,5 +1,6 @@
 import logging
 import sys
+import argparse
 from agent.browser_manager import BrowserManager
 from agent.conversation import ConversationManager
 from config.settings import LOG_LEVEL
@@ -18,6 +19,12 @@ logger = logging.getLogger(__name__)
 
 def main():
     """Main entry point for the Amazon Shopping Assistant"""
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(description='Amazon Shopping Assistant')
+    parser.add_argument('--headless', action='store_true', help='Run in headless mode')
+    parser.add_argument('--user-id', type=str, default=None, help='User ID for personalization')
+    args = parser.parse_args()
+    
     logger.info("Starting Amazon Shopping Assistant")
     
     browser_manager = BrowserManager()
@@ -27,10 +34,13 @@ def main():
         # Initialize conversation and browser
         conversation.initialize()
         
-        # Simple CLI interface for testing
+        # Enhanced CLI interface for testing
         print("\n===== Amazon Shopping Assistant =====")
-        print("Type your shopping requests in natural language")
-        print("For example: 'Find me a coffee maker under $100 with good reviews'")
+        print("Now with v2 enhancements!")
+        print("Try commands like:")
+        print("- Find me a coffee maker under $100 with good reviews")
+        print("- Compare these products")
+        print("- Read customer reviews")
         print("Type 'exit' to quit")
         print("=====================================\n")
         
@@ -40,9 +50,9 @@ def main():
             if user_input.lower() in ['exit', 'quit', 'bye']:
                 break
                 
-            # Process the message
-            print("\nSearching Amazon...")
-            result = conversation.process_message(user_input)
+            # Process the message with user ID for personalization
+            print("\nProcessing your request...")
+            result = conversation.process_message(user_input, user_id=args.user_id)
             print("\n" + result["response"])
             
     except KeyboardInterrupt:
