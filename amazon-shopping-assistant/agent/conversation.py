@@ -45,6 +45,15 @@ class ConversationManager:
             is_followup = self.is_followup_query(user_message)
             intent = self._get_intent(user_message)
             
+            # Direct command handling for better UX
+            message_lower = user_message.lower()
+            if "compare" in message_lower and "product" in message_lower and len(self.current_products) > 1:
+                return self._compare_products_deeply()
+            elif any(x in message_lower for x in ["review", "what people say"]) and self.current_products:
+                return self._deep_review_analysis()
+            elif any(x in message_lower for x in ["specs", "specifications", "details"]) and self.current_products:
+                return self._research_product(self.current_products[0])
+            
             # Handle specialized intents
             if intent == "reviews" and self.current_products:
                 return self._deep_review_analysis()
@@ -141,7 +150,13 @@ class ConversationManager:
                                                    is_refinement, next_actions, 
                                                    refinement_suggestions)
             self.conversation_history.append({"role": "assistant", "content": response})
-            
+
+            if products:
+                links_available = sum(1 for p in products if p.get('link'))
+                logger.info(f"Products with valid links: {links_available}/{len(products)}")
+                if links_available > 0:
+                    logger.info(f"Sample link: {products[0].get('link', 'None')}")
+                        
             return {
                 "response": response,
                 "products": ranked_products,
@@ -351,7 +366,10 @@ class ConversationManager:
             researched_products = []
             for product in products:
                 product_link = product.get("link", "")
-                
+                if not product_link:
+                    logger.warning(f"Missing link for product: {product.get('title', 'Unknown')}")
+                    continue
+                    
                 # Check if already researched
                 if product_link in self.researched_products:
                     research = self.researched_products[product_link]
@@ -364,6 +382,9 @@ class ConversationManager:
                 researched_products.append(product.copy())
                 researched_products[-1]['research'] = research
             
+            if len(researched_products) < 2:
+                return {"response": "I need at least two products with valid links to compare. Please try a different search."}
+                
             # Generate deep comparison using the product researcher
             comparison = self.product_researcher.compare_multiple_products(researched_products)
             
@@ -373,52 +394,86 @@ class ConversationManager:
             # Best choice recommendation
             if "best_choice" in comparison:
                 best_choice = comparison["best_choice"]
-                best_idx = best_choice.get("product_index", 0) - 1
+                best_idx = 0
+                if isinstance(best_choice, dict) and "product_index" in best_choice:
+                    best_idx = best_choice.get("product_index", 0) - 1
+                
                 if 0 <= best_idx < len(products):
                     best_product = products[best_idx]
                     response += f"### 🏆 Best Overall Choice: {best_product.get('title', 'Product ' + str(best_idx+1))}\n"
-                    response += f"*{best_choice.get('reason', '')}*\n\n"
+                    
+                    if isinstance(best_choice, dict) and "reason" in best_choice:
+                        response += f"*{best_choice.get('reason', '')}*\n\n"
+                    elif isinstance(best_choice, str):
+                        response += f"*{best_choice}*\n\n"
+                    else:
+                        response += "\n"
             
             # Best value recommendation
             if "best_value" in comparison:
                 value_choice = comparison["best_value"]
-                value_idx = value_choice.get("product_index", 0) - 1
+                value_idx = 0
+                if isinstance(value_choice, dict) and "product_index" in value_choice:
+                    value_idx = value_choice.get("product_index", 0) - 1
+                
                 if 0 <= value_idx < len(products):
                     value_product = products[value_idx]
                     response += f"### 💰 Best Value Choice: {value_product.get('title', 'Product ' + str(value_idx+1))}\n"
-                    response += f"*{value_choice.get('reason', '')}*\n\n"
+                    
+                    if isinstance(value_choice, dict) and "reason" in value_choice:
+                        response += f"*{value_choice.get('reason', '')}*\n\n"
+                    elif isinstance(value_choice, str):
+                        response += f"*{value_choice}*\n\n"
+                    else:
+                        response += "\n"
             
             # Feature comparison
             if "feature_comparison" in comparison and comparison["feature_comparison"]:
                 response += "### Feature Comparison\n"
-                for feature in comparison["feature_comparison"]:
-                    feature_name = feature.get("name", "")
-                    winner_idx = feature.get("winner_index", 0) - 1
-                    
-                    if feature_name and 0 <= winner_idx < len(products):
-                        winner_product = products[winner_idx]
-                        winner_name = winner_product.get('title', f'Product {winner_idx+1}')
-                        # Shorten title if too long
-                        if len(winner_name) > 30:
-                            winner_name = winner_name[:27] + "..."
-                        response += f"• **{feature_name}**: {winner_name} wins\n"
                 
+                if isinstance(comparison["feature_comparison"], list):
+                    for feature in comparison["feature_comparison"]:
+                        if isinstance(feature, dict):
+                            feature_name = feature.get("name", "")
+                            winner_idx = 0
+                            if "winner_index" in feature:
+                                winner_idx = feature.get("winner_index", 0) - 1
+                            
+                            if feature_name and 0 <= winner_idx < len(products):
+                                winner_product = products[winner_idx]
+                                winner_name = winner_product.get('title', f'Product {winner_idx+1}')
+                                # Shorten title if too long
+                                if len(winner_name) > 30:
+                                    winner_name = winner_name[:27] + "..."
+                                response += f"• **{feature_name}**: {winner_name} wins\n"
+                else:
+                    response += str(comparison["feature_comparison"]) + "\n"
+                    
                 response += "\n"
             
             # Reliability comparison
             if "reliability_comparison" in comparison:
                 response += "### Reliability Assessment\n"
-                response += comparison["reliability_comparison"] + "\n\n"
+                if isinstance(comparison["reliability_comparison"], dict):
+                    response += json.dumps(comparison["reliability_comparison"]) + "\n\n"
+                else:
+                    response += str(comparison["reliability_comparison"]) + "\n\n"
             
             # Price analysis
             if "price_analysis" in comparison:
                 response += "### Price-to-Value Analysis\n"
-                response += comparison["price_analysis"] + "\n\n"
+                if isinstance(comparison["price_analysis"], dict):
+                    response += json.dumps(comparison["price_analysis"]) + "\n\n"
+                else:
+                    response += str(comparison["price_analysis"]) + "\n\n"
             
             # User recommendation
             if "recommendation" in comparison:
                 response += "### Best For Different Users\n"
-                response += comparison["recommendation"] + "\n\n"
+                if isinstance(comparison["recommendation"], dict):
+                    response += json.dumps(comparison["recommendation"]) + "\n\n"
+                else:
+                    response += str(comparison["recommendation"]) + "\n\n"
             
             # Summary
             response += "### Summary\n"
@@ -428,15 +483,19 @@ class ConversationManager:
                 if len(product_title) > 40:
                     product_title = product_title[:37] + "..."
                     
-                research = researched_products[i]['research']
-                pros = research.get('pros_cons', {}).get('pros', [])
-                cons = research.get('pros_cons', {}).get('cons', [])
-                
-                response += f"**{product_title}**\n"
-                if pros:
-                    response += f"*Pros*: {', '.join(pros[:2])}\n"
-                if cons:
-                    response += f"*Cons*: {', '.join(cons[:2])}\n"
+                if i < len(researched_products):
+                    research = researched_products[i].get('research', {})
+                    pros = research.get('pros_cons', {}).get('pros', [])
+                    cons = research.get('pros_cons', {}).get('cons', [])
+                    
+                    response += f"**{product_title}**\n"
+                    if pros:
+                        response += f"*Pros*: {', '.join(pros[:2])}\n"
+                    if cons:
+                        response += f"*Cons*: {', '.join(cons[:2])}\n"
+                else:
+                    response += f"**{product_title}**\n"
+                    
                 response += "\n"
             
             response += "Would you like more details about any specific product or aspect?"
@@ -578,20 +637,30 @@ class ConversationManager:
         
         return "\n".join(response_parts)
     
-    # The following methods for follow-up handling
     def is_followup_query(self, message: str) -> bool:
         """Enhanced follow-up detection with better context awareness"""
         if len(self.conversation_history) < 2:
             return False
             
-        # Check for explicit follow-up phrases
-        followup_phrases = [
-            "show me", "more details", "reviews", "cheaper", "better",
-            "what about", "tell me more", "how about", "features", 
-            "specs", "compare", "details", "price", "shipping"
+        # Direct commands that should be treated as follow-ups when products exist
+        direct_commands = [
+            "compare", "compare products", "compare top products", 
+            "reviews", "read reviews", "read in-depth review analysis",
+            "details", "specifications", "specs", "see detailed product specifications",
+            "tell me more", "more information", "learn more"
         ]
         
         message_lower = message.lower()
+        
+        # Check if this is a direct command and we have products
+        if self.current_products and any(cmd in message_lower for cmd in direct_commands):
+            return True
+            
+        # Original follow-up detection logic
+        followup_phrases = [
+            "show me", "more details", "cheaper", "better",
+            "what about", "how about", "features", "price", "shipping"
+        ]
         
         # Check for short queries that reference previous context
         is_short_query = len(message.split()) < 5
@@ -615,7 +684,7 @@ class ConversationManager:
             is_command_without_product or
             has_followup_phrase
         )
-        
+    
     def handle_followup_query(self, message: str) -> Dict[str, Any]:
         """Enhanced follow-up handling with better understanding of refinements"""
         modified_query = self.current_query.copy()

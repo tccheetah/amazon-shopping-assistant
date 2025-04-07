@@ -232,28 +232,39 @@ class AmazonNavigator:
                         if rating_match:
                             rating_value = float(rating_match.group(1))
                     
-                    # Extract link
-                    link_element = element.query_selector("h2 a")
-                    link = link_element.get_attribute("href") if link_element else None
-                                        
-                    # Ensure we have a complete URL
-                    if link:
-                        # Handle relative URLs
-                        if link.startswith("/"):
-                            full_link = f"{AMAZON_BASE_URL}{link}"
-                        elif not link.startswith("http"):
-                            full_link = f"{AMAZON_BASE_URL}/{link}"
-                        else:
-                            full_link = link
-                            
-                        # Clean up the URL by removing tracking parameters
-                        if "?" in full_link:
-                            base_url = full_link.split("?")[0]
-                            full_link = base_url
-                    else:
-                        full_link = None
-
-                    product["link"] = full_link
+                    # FIXED: Extract link with improved approach
+                    link = None
+                    # Try multiple selectors for links
+                    link_selectors = [
+                        "h2 a",
+                        ".a-link-normal.s-no-outline",
+                        ".a-link-normal.s-underline-text"
+                    ]
+                    
+                    for selector in link_selectors:
+                        link_element = element.query_selector(selector)
+                        if link_element:
+                            href = link_element.get_attribute("href")
+                            if href:
+                                # If it's a relative URL, make it absolute
+                                if href.startswith("/"):
+                                    link = f"{AMAZON_BASE_URL}{href}"
+                                else:
+                                    # Extract ASIN from the URL if possible
+                                    asin_match = re.search(r'/dp/([A-Z0-9]{10})(?:/|$)', href)
+                                    if asin_match:
+                                        asin = asin_match.group(1)
+                                        link = f"{AMAZON_BASE_URL}/dp/{asin}"
+                                    else:
+                                        # Use the href as is if we can't extract ASIN
+                                        link = href
+                                break
+                    
+                    # Fallback for link: Try to find data-asin attribute and construct URL
+                    if not link:
+                        asin = element.get_attribute("data-asin")
+                        if asin:
+                            link = f"{AMAZON_BASE_URL}/dp/{asin}"
                     
                     # Extract Prime status
                     prime_element = element.query_selector("i.a-icon-prime")
@@ -274,16 +285,72 @@ class AmazonNavigator:
                         "reviews": reviews,
                         "review_count": self._extract_review_count(reviews),
                         "has_prime": has_prime,
-                        "link": full_link,
+                        "link": link,
                         "image": img_url
                     }
                     
-                    products.append(product)
+                    # Only add products with valid links
+                    if link:
+                        products.append(product)
+                    else:
+                        logger.warning(f"Skipping product with missing link: {title}")
                     
                 except Exception as e:
                     logger.warning(f"Failed to extract product {i}: {str(e)}")
             
+            # If we have fewer products than requested, try to add some even without links
+            if len(products) < min(3, max_results) and product_elements:
+                for i, element in enumerate(product_elements):
+                    if i >= max_results:
+                        break
+                        
+                    try:
+                        title_element = element.query_selector("h2 a span")
+                        if title_element:
+                            title = title_element.inner_text()
+                            
+                            # Only add if this product isn't already in our list
+                            if not any(p.get('title') == title for p in products):
+                                # Create basic product with whatever data we can extract
+                                basic_product = {
+                                    "title": title,
+                                    "price": "Price not available",
+                                    "price_value": 0.0,
+                                    "rating": "No rating",
+                                    "rating_value": 0.0,
+                                    "reviews": "0",
+                                    "review_count": 0,
+                                    "has_prime": False,
+                                    # Create a dummy link with the ASIN if available
+                                    "link": f"{AMAZON_BASE_URL}/s?k={title.replace(' ', '+')}"
+                                }
+                                
+                                # Try to extract price and rating if possible
+                                price_element = element.query_selector(".a-price .a-offscreen")
+                                if price_element:
+                                    basic_product["price"] = price_element.inner_text()
+                                    basic_product["price_value"] = self._extract_price_value(basic_product["price"])
+                                    
+                                rating_element = element.query_selector("span.a-icon-alt")
+                                if rating_element:
+                                    basic_product["rating"] = rating_element.inner_text()
+                                    rating_match = re.search(r'(\d+(\.\d+)?)', basic_product["rating"])
+                                    if rating_match:
+                                        basic_product["rating_value"] = float(rating_match.group(1))
+                                
+                                products.append(basic_product)
+                                
+                    except Exception as e:
+                        logger.warning(f"Failed to extract fallback product {i}: {str(e)}")
+            
             logger.info(f"Extracted {len(products)} products")
+            
+            # Debug log to check links
+            links_available = sum(1 for p in products if p.get('link'))
+            logger.info(f"Products with valid links: {links_available}/{len(products)}")
+            if links_available > 0 and products:
+                logger.info(f"Sample link: {products[0].get('link', 'None')}")
+                
             return products
             
         except Exception as e:
