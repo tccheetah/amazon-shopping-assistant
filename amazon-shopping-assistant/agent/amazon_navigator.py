@@ -235,7 +235,25 @@ class AmazonNavigator:
                     # Extract link
                     link_element = element.query_selector("h2 a")
                     link = link_element.get_attribute("href") if link_element else None
-                    full_link = f"{AMAZON_BASE_URL}{link}" if link and not link.startswith("http") else link
+                                        
+                    # Ensure we have a complete URL
+                    if link:
+                        # Handle relative URLs
+                        if link.startswith("/"):
+                            full_link = f"{AMAZON_BASE_URL}{link}"
+                        elif not link.startswith("http"):
+                            full_link = f"{AMAZON_BASE_URL}/{link}"
+                        else:
+                            full_link = link
+                            
+                        # Clean up the URL by removing tracking parameters
+                        if "?" in full_link:
+                            base_url = full_link.split("?")[0]
+                            full_link = base_url
+                    else:
+                        full_link = None
+
+                    product["link"] = full_link
                     
                     # Extract Prime status
                     prime_element = element.query_selector("i.a-icon-prime")

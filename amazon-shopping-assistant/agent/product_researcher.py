@@ -350,12 +350,13 @@ class ProductResearcher:
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "system", "content": "Expert product comparison analyst"}, 
-                          {"role": "user", "content": prompt}],
+                        {"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0.2
             )
             
-            return json.loads(response.choices[0].message.content)
+            comparison_data = json.loads(response.choices[0].message.content)
+            return comparison_data
             
         except Exception as e:
             logger.error(f"Error in deep product comparison: {str(e)}")
