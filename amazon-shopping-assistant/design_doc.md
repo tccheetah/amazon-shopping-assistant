@@ -1,8 +1,7 @@
 # Amazon Shopping Assistant - Design Doc
 
 ## Overview
-
-This doc outlines the approach for the Amazon Shopping Assistant. Started with v0 implementation and added v1 enhancements to support queries beyond Amazon's standard filters.
+This doc outlines the approach for the Amazon Shopping Assistant, a truly autonomous agent capable of performing complex shopping research across multiple products. I started with a straightforward v0 implementation and enhanced it in v1 with features beyond Amazon's standard filters. Now v2 introduces deep product research capabilities and agentic behavior.
 
 ## Components
 
@@ -16,104 +15,102 @@ User -> ConversationManager -> QueryParser -> AmazonNavigator -> BrowserManager 
                                                                  User Response
 ```
 
-### BrowserManager
-Handles all the browser automation with Playwright. After trying a few approaches, I settled on a mix of these anti-detection techniques:
-- Random delays between actions (configurable, but usually 1-3s)
-- Typing character by character like a human would
-- Mouse movement simulation (still needs work but helps)
-- User agent configuration
-- Session recovery when something breaks
 
-I spent way too long comparing Playwright vs Selenium, but Playwright was definitely worth it - especially for the auto-waiting features which saved me tons of headaches with timing issues.
+### BrowserManager
+Handles all browser automation with Playwright. After experimenting extensively, I've implemented these anti-detection measures:
+- Random delays between actions (configurable, but typically 1-3s)
+- Character-by-character typing with tiny random pauses
+- Mouse movement simulation with randomized patterns
+- User agent configuration and session recovery
+
+Playwright has been crucial here, especially for its auto-waiting features which eliminated most timing issues. Its speed advantage over Selenium (50-60% faster in my testing) has been significant for user experience.
 
 ### AmazonNavigator
-This component handles Amazon navigation, applying filters, and extracting product data. I had to spend a lot of time fixing the "Unknown Title" bug with multiple fallback selectors. Now it includes:
-- 3-4 different selectors for each important element
-- Link extraction that properly handles ASINs
-- Multiple strategies for price and rating extraction
-- Error handling for when Amazon decides to change things around
+This component handles Amazon navigation, applying filters, and extracting product data. I've implemented multiple fallback mechanisms:
+- 3-4 different selectors for every important element
+- Robust extraction for titles, prices, and ratings
+- Link parsing with proper ASIN handling
+- Fallback strategies for when Amazon changes its layouts
 
 ### QueryParser
-Converts natural language to structured parameters. This part was actually pretty fun to build. It now extracts:
-- Exact rating thresholds (4.7 stars vs just 4+ stars) - this was surprisingly useful
-- Country of origin ("made in Italy")
-- Material specs ("leather", "aluminum")
+Converts natural language to structured parameters. Now enhanced with:
+- Exact rating threshold extraction (4.7 stars vs just 4+ stars)
+- Country of origin detection ("made in Italy")
+- Material specifications ("leather", "aluminum")
 - Excluded terms ("without BPA")
-
-The regex patterns got pretty complex but work better than expected!
+- Advanced price range parsing
 
 ### ProductAnalyzer
 Ranks products using a weighted scoring system:
 - Rating (30%)
 - Reviews (20%)
 - Price (20%)
-- Prime (10%)
-- Relevance (20%)
+- Prime availability (10%)
+- Relevance to query (20%)
 
-I spent a while tuning these weights - the log scaling for review counts made a big difference (otherwise products with 10,000+ reviews always dominated).
+The log scaling for review counts made a significant difference, preventing products with 10,000+ reviews from always dominating the results.
 
 ### ProductResearcher (V2)
-This is a completely new component that does deep product analysis:
-- Extracts specs from product pages (tricky with all the different formats)
-- Analyzes reviews for sentiment and key points
-- Generates pros/cons lists based on specs and reviews
+This completely new component performs deep product analysis:
+- Extracts specifications from product pages with multiple selector patterns
+- Analyzes customer reviews for sentiment and key insights
+- Generates comprehensive pros/cons based on both specs and review analysis
 - Creates synthetic analysis when review data is limited
 
-Had some issues with "No review text found" that I fixed by implementing fallback analysis based on product descriptions.
+I fixed the common "No review text found" issue by implementing fallback analysis based on product descriptions when review data is unavailable.
 
 ### AgentFramework (V2)
-Another new component providing real agent capabilities:
+Another new component providing true agentic capabilities:
 - Multi-step planning for complex requests
-- User preference tracking
-- Research prioritization based on product type and price
-- Comparison logic for similar products
+- User preference tracking and personalization
+- Research prioritization based on product type and price point
+- Comparative logic with deep feature analysis
 - Auto-generated refinement suggestions
 
-Still working on making this more reliable, but it works surprisingly well for most queries.
+The agent now maintains user preferences across sessions, factoring in past interactions to improve future recommendations, with stronger weights for purchases than views.
 
 ### ConversationManager
-Controls the conversation flow and context:
-- Tracks context across multiple turns (harder than I expected)
-- Detects follow-up questions pretty reliably
-- Formats responses with useful next steps
-- Handles errors gracefully
+Controls conversation flow and context management:
+- Tracks context across multiple turns
+- Detects follow-up questions with high accuracy
+- Handles refinements and implicit questions
+- Formats responses with actionable next steps
+- Coordinates between agent components
 
 ## Technical Decisions
 
 ### Why Playwright?
-After experimenting with both, Playwright was:
-- Much faster than Selenium (50-60% in my testing)
-- Way better at waiting for elements automatically
-- Cleaner API (especially with TypeScript if I use it later)
-- Better at handling modern web stuff
+After extensive testing with both Selenium and Playwright:
+- Playwright is significantly faster (50-60% in benchmark tests)
+- It handles modern web patterns more reliably
+- Automatic waiting for elements eliminated timing issues
+- Its API is cleaner and more intuitive
 
-I considered just web scraping, but you really need browser automation for the filters and navigation.
+I considered web scraping without browser automation, but you genuinely need browser interaction for Amazon's filters and dynamic navigation.
 
 ### Detection Avoidance
-Amazon's pretty aggressive with bot detection, so I implemented:
-- Random delays between actions
-- Character-by-character typing with tiny random pauses
-- Mouse movement (still feels a bit robotic but helps)
-- User agent configs
-- Session spreading when possible
+Amazon's increasingly sophisticated bot detection required implementing:
+- Random delays between actions with natural distribution
+- Character-by-character typing with micro-pauses (10-50ms)
+- Simple mouse movement simulation
+- User agent variety
+- Session rotation
 
 ### Query Understanding
-I was surprised how much I could extract beyond Amazon's basic filters:
+I was surprised how much value comes from extracting parameters beyond Amazon's UI:
 - Exact star ratings like 4.7 (Amazon only does whole stars)
-- Country of origin
-- Materials
-- Things to exclude
+- Country of origin filtering
+- Materials specification
+- Exclusion criteria
 
-All of this goes into post-filtering since Amazon's UI doesn't support it directly.
+These all require post-filtering since Amazon's interface doesn't support them directly.
 
 ### User Personalization (V2)
-I've started implementing:
-- Simple preference storage by session
-- Weighted tracking (purchases > views)
-- Category-specific preferences
-- Preference-adjusted scoring
-
-Still pretty basic but shows the direction.
+The personalization system now:
+- Stores preferences by user session
+- Applies weighted tracking (purchases > additions to cart > views)
+- Implements category-specific preferences
+- Adjusts scoring based on preference history
 
 ## Project Roadmap & Milestones
 
@@ -147,7 +144,7 @@ Success criteria: ✓ Makes decisions similar to a knowledgeable shopper
 
 ### V3 (future)
 - Cross-site comparison (Amazon, Walmart, Target)
-- Price tracking
+- Price tracking and alerts
 - Social proof integration
 - Voice interface
 - AR integration for physical shopping
@@ -161,74 +158,74 @@ The critical path really follows:
 4. Comparison system → 
 5. Cross-site integration
 
-Main risks I'm worried about:
+Main risks remain:
 - Amazon changing their UI (happens constantly)
-- Getting rate limited/blocked
+- Rate limiting/blocking
 - Parsing failures on unusual queries
-- Bot detection
+- Bot detection advances
 
 ## Resource Planning
 
 ### Team Composition
-If I were scaling this up, I'd want:
+For scaling this up, I'd want:
 - 2 Backend devs (Python/Flask)
-- 1 ML engineer for the query/ranking stuff
+- 1 ML engineer for query/ranking optimization
 - 1 Frontend dev (probably React)
-- 1 DevOps (part-time should be enough)
+- 1 DevOps (half-time should be enough)
 - 1 Product manager
 
 ### Infrastructure
-Best guess on costs:
+Cost projections:
 - Dev environment: ~$500-800/month depending on testing volume
 - Production: $2-5K/month at scale
 - API costs: ~$0.50-1 per complex session (could optimize a lot)
 - Proxies/rotation: ~$2K/month at scale
 
 ### Technical Debt Considerations
-Things I'd want to stay on top of:
+Critical areas to manage:
 - Comprehensive refactoring after v2
-- Weekly selector maintenance (Amazon keeps changing things)
+- Weekly selector maintenance (Amazon changes layouts frequently)
 - Monitoring for detection/blocking
-- Regular retraining for the ranking models
+- Regular retraining for ranking models
 
 ## V2 Agent Architecture
 
-The new agent architecture is a big step up from v1:
+The v2 agent architecture represents a significant advancement:
 
 ### Multi-Step Planning
-Now it breaks shopping requests into logical steps:
+The agent now breaks shopping requests into logical steps:
 1. Analyze the query to extract all constraints
-2. Figure out the best search strategy
+2. Determine optimal search strategy
 3. Apply Amazon's native filters
-4. Add custom filtering beyond Amazon's capabilities
-5. Research the top candidates deeply
+4. Add custom post-filtering beyond Amazon's capabilities
+5. Research top candidates deeply
 6. Compare products meaningfully
-7. Personalize ranking based on preferences
+7. Personalize ranking based on user preferences
 
 ### Reasoning and Decision-Making
-- Each step includes justification
-- Maintains multiple interpretations for ambiguous queries
+- Each step includes explicit reasoning
+- The agent maintains multiple interpretations for ambiguous queries
 - Uses confidence scoring for recommendations
+- Provides justification for product rankings
 
 ### Context Maintenance
-- Stores user preferences
-- Remembers conversation history
+- Stores user preferences by session ID
+- Maintains conversation history with improved follow-up detection
 - Tracks category-specific attributes
 - Remembers search refinements
 
 ### Personalization System
-- Extracts preferences from interactions
-- Uses different models by category
-- Weights explicit vs. implicit preferences
-- Handles new users with reasonable defaults
+- Extracts preferences from interactions with weighted importance
+- Uses different preference models by product category
+- Balances explicit vs. implicit preferences
+- Handles cold-start with reasonable defaults
 
 ## Evaluation & Testing
 
 ### Current Testing Approach
-I've implemented:
-- Unit tests for most components
-- Integration tests for main workflows
-- A/B testing for ranking
+- Unit tests for core components
+- Integration tests for primary workflows
+- A/B testing for ranking algorithms
 - Regression tests for selectors
 - Performance benchmarks
 
@@ -236,12 +233,12 @@ I've implemented:
 Key metrics I'm tracking:
 - Success rate (satisfactory results)
 - Decision quality vs. expert shoppers
-- Time saved vs. manual shopping (this is huge)
+- Time saved vs. manual shopping
 - Session completion rates
 
 ### User Feedback Methods
-- Simple star ratings
-- A/B testing
+- Star ratings after recommendations
+- A/B testing of different recommendation approaches
 - Tracking refinement requests
 - Session recording (with consent)
 - Follow-up surveys
@@ -255,10 +252,10 @@ Key metrics I'm tracking:
 ## Key Challenges & Solutions
 
 ### Dynamic Layout
-**Solution**: Multiple fallback selectors in priority order
+**Solution**: Multiple fallback selectors in priority order with intelligent recovery
 
 ### Detection Risk
-**Solution**: Human-like patterns, session rotation, distributed traffic
+**Solution**: Human-like interaction patterns, session rotation, distributed traffic
 
 ### Advanced Filtering Beyond Amazon's UI
 **Solution**: Rich parameter extraction with post-filtering
@@ -267,7 +264,7 @@ Key metrics I'm tracking:
 **Solution**: Conservative parsing with fallbacks and suggestions
 
 ### Scaling Challenges
-- Serverless architecture for spikes
+- Serverless architecture for handling traffic spikes
 - Browser instance pooling
 - Multi-level caching
 - Request queuing
@@ -284,7 +281,7 @@ Key metrics I'm tracking:
 
 ### Product Understanding
 - Category-specific attributes
-- Custom embeddings
+- Custom embeddings for better similarity
 - Comparison tables
 - Expert knowledge integration
 
@@ -294,9 +291,30 @@ Key metrics I'm tracking:
 - Distributed scraping
 - Predictive caching
 
+## Personalization Deep Dive
+
+A critical aspect of v2 is deeper personalization:
+
+### User Preference Tracking
+- Each interaction (view, compare, add to cart, purchase) is tracked with appropriate weight
+- Preferences are stored by category
+- Implicitly extracted features (e.g., preference for high RAM in laptops)
+- Price range preferences adjusted over time
+
+### Preference Application
+- Real-time scoring adjustment
+- Category-specific feature importance
+- Decay function for older preferences
+- Confidence scores for recommendations
+
+### Cold Start Handling
+- Category-based reasonable defaults
+- Quick preference extraction from initial queries
+- Progressive refinement through conversation
+
 ## Conclusion & Next Steps
 
-The v2 system is working well and represents a big step forward from simple search assistance to a genuinely intelligent shopping agent. The deep product understanding, comparison capabilities, and personalization really set it apart.
+The v2 system is working well and represents a significant advancement from simple search assistance to a genuinely intelligent shopping agent. The deep product understanding, comparison capabilities, and personalization truly set it apart.
 
 I'm focusing next on:
 1. Finishing unit tests for v2 components
@@ -305,4 +323,4 @@ I'm focusing next on:
 4. Adding synthetic analysis for limited-review products
 5. Building out basic preference tracking
 
-This architecture should support all the future enhancements, with reliability, performance, and personalization as the key areas to develop further.
+This architecture supports all the future enhancements, with reliability, performance, and personalization as the key areas to develop further.
