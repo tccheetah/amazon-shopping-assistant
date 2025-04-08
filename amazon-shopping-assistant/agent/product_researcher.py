@@ -189,20 +189,33 @@ class ProductResearcher:
         }
         
         try:
+            # Try to find reviews section first
+            review_found = False
+            
             # Navigate to reviews page
             review_selectors = [
                 "a[data-hook='see-all-reviews-link-foot']",
                 "a.a-link-emphasis[href*='#customerReviews']",
-                "a[href*='#customerReviews']"
+                "a[href*='#customerReviews']",
+                "#acrCustomerReviewLink"
             ]
             
             for selector in review_selectors:
                 if self.page.is_visible(selector):
                     self.page.click(selector)
                     self.browser_manager.random_delay()
+                    review_found = True
                     break
             
-            # Count verified purchases
+            # If we can't find a way to reviews section, try to extract review from current page
+            if not review_found:
+                logger.info("No review navigation found. Trying to extract from current page.")
+                # Try to find reviews on current page
+                current_page_reviews = self.page.query_selector_all(".a-section.review")
+                if current_page_reviews and len(current_page_reviews) > 0:
+                    review_found = True
+            
+            # Check for verified purchases
             verified_elements = self.page.query_selector_all(".a-color-state:text('Verified Purchase')")
             result["verified_purchases"] = len(verified_elements)
             
@@ -211,13 +224,77 @@ class ProductResearcher:
             review_dates = [e.inner_text() for e in date_elements[:5]]
             result["recent_reviews"] = review_dates
             
-            # Extract review texts
-            reviews = self.page.query_selector_all(
-                ".a-section.review-text, .a-section.review-text-content")
-            reviews_text = "\n".join([r.inner_text() for r in reviews[:10]])
+            # Extract review texts with multiple selector approaches
+            review_selectors = [
+                ".a-section.review-text, .a-section.review-text-content",
+                ".a-row.a-spacing-small.review-data",
+                ".a-expander-content.reviewText.review-text-content",
+                ".a-row.a-spacing-small"
+            ]
             
+            reviews_text = ""
+            for selector in review_selectors:
+                reviews = self.page.query_selector_all(selector)
+                if reviews and len(reviews) > 0:
+                    reviews_text_list = [r.inner_text() for r in reviews[:10]]
+                    reviews_text = "\n".join(reviews_text_list)
+                    if len(reviews_text) > 200:  # Only accept if we got substantial text
+                        break
+            
+            # Alternative: check if we can directly go to reviews page
+            if not reviews_text:
+                try:
+                    # Try to construct and navigate to reviews page directly
+                    current_url = self.page.url
+                    asin_match = re.search(r'/dp/([A-Z0-9]{10})(?:/|$)', current_url)
+                    if asin_match:
+                        asin = asin_match.group(1)
+                        reviews_url = f"{AMAZON_BASE_URL}/product-reviews/{asin}"
+                        self.page.goto(reviews_url)
+                        self.browser_manager.random_delay()
+                        
+                        # Now try to extract reviews again
+                        reviews = self.page.query_selector_all(".a-section.review-text, .a-section.review-text-content")
+                        if reviews:
+                            reviews_text = "\n".join([r.inner_text() for r in reviews[:10]])
+                except Exception as e:
+                    logger.warning(f"Failed to navigate to direct reviews page: {str(e)}")
+            
+            # If still no reviews, check product description for features to extract potential pros
             if not reviews_text:
                 logger.warning("No review text found")
+                
+                # Get product title and description to use for synthetic review analysis
+                product_title = ""
+                title_element = self.page.query_selector("span#productTitle")
+                if title_element:
+                    product_title = title_element.inner_text().strip()
+                
+                description = ""
+                description_element = self.page.query_selector("#feature-bullets, #productDescription")
+                if description_element:
+                    description = description_element.inner_text().strip()
+                
+                # Extract key specifications for synthetic analysis
+                specs = {}
+                spec_sections = self.page.query_selector_all("#prodDetails, #techSpec_section")
+                for section in spec_sections:
+                    rows = section.query_selector_all("tr")
+                    for row in rows:
+                        th = row.query_selector("th")
+                        td = row.query_selector("td")
+                        if th and td:
+                            key = th.inner_text().strip()
+                            value = td.inner_text().strip()
+                            specs[key] = value
+                
+                # Use extracted information to create synthetic analysis if we have at least title and description
+                if product_title and (description or specs):
+                    synthetic_analysis = self._generate_synthetic_analysis(product_title, description, specs)
+                    result.update(synthetic_analysis)
+                    return result
+                
+                # If we have nothing to work with, return default empty result
                 return result
             
             # AI-powered review analysis
@@ -232,10 +309,66 @@ class ProductResearcher:
         except Exception as e:
             logger.error(f"Error analyzing reviews: {str(e)}")
             return result
+
+    def _generate_synthetic_analysis(self, title: str, description: str, specs: Dict[str, str]) -> Dict[str, Any]:
+        """Generate synthetic review analysis when no reviews are found"""
+        try:
+            # Prepare context from product details
+            context = {
+                "title": title,
+                "description": description[:1000] if description else "",
+                "specifications": specs
+            }
+            
+            prompt = f"""
+            Based on this product information (no actual reviews available), generate a likely review analysis:
+            {json.dumps(context)}
+            
+            Suggest likely strengths and concerns based on the product specifications and description.
+            
+            Return JSON with: 
+            - sentiment: string (positive/mixed/negative - if unclear, say "unknown")
+            - strengths: array of likely strengths based on specs (3-5 items)
+            - concerns: array of likely concerns based on specs (2-3 items)
+            - longevity: string (if mentioned in specs, otherwise "unknown")
+            - common_themes: array of likely talking points (2-3 items)
+            """
+            
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[{"role": "system", "content": "Expert product analyst"}, 
+                        {"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.2
+            )
+            
+            synthetic_analysis = json.loads(response.choices[0].message.content)
+            logger.info("Generated synthetic review analysis in absence of reviews")
+            return synthetic_analysis
+        except Exception as e:
+            logger.error(f"Error generating synthetic analysis: {str(e)}")
+            return {
+                "sentiment": "unknown",
+                "strengths": [],
+                "concerns": [],
+                "longevity": "unknown",
+                "common_themes": []
+            }
     
     def _get_review_insights(self, reviews_text: str) -> Dict[str, Any]:
         """Use AI to extract deeper insights from reviews"""
         try:
+            # If review text is too short, return basic result
+            if len(reviews_text.strip()) < 100:
+                logger.warning("Review text too short for meaningful analysis")
+                return {
+                    "sentiment": "unknown",
+                    "strengths": [],
+                    "concerns": [],
+                    "longevity": "unknown",
+                    "common_themes": []
+                }
+                
             prompt = f"""
             Analyze these product reviews in depth and extract:
             1. Overall sentiment (positive/mixed/negative)
@@ -261,7 +394,7 @@ class ProductResearcher:
             response = self.client.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[{"role": "system", "content": "Expert product review analyst"}, 
-                          {"role": "user", "content": prompt}],
+                        {"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
                 temperature=0
             )

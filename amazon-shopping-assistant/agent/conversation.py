@@ -9,7 +9,7 @@ from .product_analyzer import ProductAnalyzer
 from .product_researcher import ProductResearcher
 from .browser_manager import BrowserManager
 from .agent_framework import AgentFramework
-from config.settings import OPENAI_API_KEY
+from config.settings import OPENAI_API_KEY, AMAZON_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -195,8 +195,42 @@ class ConversationManager:
         try:
             product = self.current_products[0]
             product_link = product.get("link")
-            if not product_link:
-                return {"response": "I can't access this product's reviews."}
+            
+            # Check if we have a valid link
+            if not product_link or product_link.startswith(f"{AMAZON_BASE_URL}/s?k="):  # This detects our dummy search links
+                # Provide basic information without review analysis
+                response = f"## Product Information: {product.get('title', 'This Product')}\n\n"
+                response += "I cannot access detailed reviews for this product due to limited data.\n\n"
+                
+                # Extract what we can from the title
+                title = product.get('title', '').lower()
+                
+                # Highlight key features we can extract from the title
+                key_features = []
+                for feature in ["ram", "processor", "ssd", "battery", "display", "screen"]:
+                    if feature in title:
+                        pattern = rf'(\d+(?:\.\d+)?\s*(?:GB|TB|GHz|inch|hours)?\s*{re.escape(feature)})'
+                        match = re.search(pattern, title, re.IGNORECASE)
+                        if match:
+                            key_features.append(match.group(0))
+                
+                if key_features:
+                    response += "### Notable Features\n"
+                    for feature in key_features:
+                        response += f"• {feature}\n"
+                    response += "\n"
+                
+                # Add basic rating info if available
+                if product.get('rating') != "No rating":
+                    response += f"**Rating**: {product.get('rating')}\n\n"
+                
+                # Add price info
+                response += f"**Price**: {product.get('price', 'Price not available')}\n\n"
+                
+                response += "Would you like to try a different search to find products with more detailed information?"
+                self.conversation_history.append({"role": "assistant", "content": response})
+                
+                return {"response": response}
             
             # Check if we've already researched this product
             if product_link in self.researched_products:
@@ -280,8 +314,56 @@ class ConversationManager:
         """V2: Perform detailed research on a specific product"""
         try:
             product_link = product.get("link")
-            if not product_link:
-                return {"response": "I can't access this product's details."}
+            
+            # Check if we have a valid link
+            if not product_link or product_link.startswith(f"{AMAZON_BASE_URL}/s?k="):  # This detects our dummy search links
+                # Provide basic information without detailed research
+                response = f"## Product Information: {product.get('title', 'This Product')}\n\n"
+                response += "I cannot access detailed specifications for this product due to limited data.\n\n"
+                
+                # Extract what we can from the title
+                title = product.get('title', '').lower()
+                
+                # Highlight key features we can extract from the title
+                key_features = []
+                for feature in ["ram", "processor", "ssd", "battery", "display", "screen", "storage"]:
+                    if feature in title:
+                        pattern = rf'(\d+(?:\.\d+)?\s*(?:GB|TB|GHz|inch|hours)?\s*{re.escape(feature)})'
+                        match = re.search(pattern, title, re.IGNORECASE)
+                        if match:
+                            key_features.append(match.group(0))
+                
+                # Look for processor information
+                processor_match = re.search(r'((?:intel|amd|ryzen|celeron|core)\s+[^\s,]+(?:\s+[^\s,]+)?)', title, re.IGNORECASE)
+                if processor_match:
+                    key_features.append(f"Processor: {processor_match.group(1)}")
+                
+                if key_features:
+                    response += "### Specifications\n"
+                    for feature in key_features:
+                        response += f"• {feature}\n"
+                    response += "\n"
+                
+                # Add basic rating info if available
+                if product.get('rating') != "No rating":
+                    response += f"**Rating**: {product.get('rating')}"
+                    
+                    review_count = product.get('review_count', 0)
+                    if review_count:
+                        response += f" ({review_count} reviews)\n\n"
+                    else:
+                        response += "\n\n"
+                
+                # Add price info
+                response += f"**Price**: {product.get('price', 'Price not available')}\n\n"
+                
+                # Add shipping info
+                response += f"**Shipping**: {'✓ Prime shipping available' if product.get('has_prime', False) else 'Standard shipping'}\n\n"
+                
+                response += "Would you like to try a different search to find products with more detailed information?"
+                self.conversation_history.append({"role": "assistant", "content": response})
+                
+                return {"response": response}
             
             # Check if already researched
             if product_link in self.researched_products:
@@ -362,9 +444,112 @@ class ConversationManager:
         try:
             products = self.current_products[:3]  # Limit to top 3
             
+            # First check if we have enough products with valid links
+            valid_products = [p for p in products if p.get("link") and not p.get("link").startswith(f"{AMAZON_BASE_URL}/s?k=")]
+            
+            if len(valid_products) < 2:
+                # Create a basic comparison if we don't have enough valid links
+                logger.warning(f"Not enough products with valid links. Creating basic comparison.")
+                
+                # Format basic comparison response
+                response = "## Product Comparison\n\n"
+                response += "I can provide a basic comparison based on the available product information:\n\n"
+                
+                # Compare key attributes
+                for i, product in enumerate(products, 1):
+                    response += f"### {i}. {product.get('title', 'Unknown product')}\n"
+                    response += f"* **Price**: {product.get('price', 'Price not available')}\n"
+                    response += f"* **Rating**: {product.get('rating', 'No rating')}"
+                    
+                    review_count = product.get('review_count', 0)
+                    if review_count:
+                        response += f" ({review_count} reviews)\n"
+                    else:
+                        response += "\n"
+                    
+                    # Extract key features from title
+                    key_features = []
+                    title = product.get('title', '').lower()
+                    for feature in ["ram", "processor", "ssd", "battery", "display", "screen"]:
+                        if feature in title:
+                            pattern = rf'(\d+(?:\.\d+)?\s*(?:GB|TB|GHz|inch|hours)?\s*{re.escape(feature)})'
+                            match = re.search(pattern, title, re.IGNORECASE)
+                            if match:
+                                key_features.append(match.group(0))
+                    
+                    if key_features:
+                        response += f"* **Features**: {', '.join(key_features)}\n"
+                    
+                    response += f"* {'✓ Prime shipping' if product.get('has_prime', False) else 'Standard shipping'}\n\n"
+                
+                # Add a simple comparison table of key specs
+                response += "### Key Specifications Comparison\n\n"
+                response += "| Feature | "
+                
+                # Add product names to the table header
+                for i, product in enumerate(products, 1):
+                    title = product.get('title', f'Product {i}')
+                    # Truncate long titles
+                    if len(title) > 20:
+                        title = title[:17] + "..."
+                    response += f"{title} | "
+                response += "\n"
+                
+                # Add separator row
+                response += "| --- | " + " --- |" * len(products) + "\n"
+                
+                # Add price row
+                response += "| Price | "
+                for product in products:
+                    response += f"{product.get('price', 'N/A')} | "
+                response += "\n"
+                
+                # Add rating row
+                response += "| Rating | "
+                for product in products:
+                    response += f"{product.get('rating', 'N/A')} | "
+                response += "\n"
+                
+                # Add RAM row if applicable
+                if any("ram" in product.get('title', '').lower() for product in products):
+                    response += "| RAM | "
+                    for product in products:
+                        title = product.get('title', '').lower()
+                        ram_match = re.search(r'(\d+\s*gb\s*ram)', title)
+                        ram = ram_match.group(1) if ram_match else "N/A"
+                        response += f"{ram} | "
+                    response += "\n"
+                
+                # Add Storage row if applicable
+                if any(storage_term in product.get('title', '').lower() for product in products for storage_term in ["ssd", "emmc", "storage"]):
+                    response += "| Storage | "
+                    for product in products:
+                        title = product.get('title', '').lower()
+                        storage_match = re.search(r'(\d+\s*(?:gb|tb)\s*(?:ssd|emmc|storage))', title)
+                        storage = storage_match.group(1) if storage_match else "N/A"
+                        response += f"{storage} | "
+                    response += "\n"
+                
+                # Add processor row if applicable
+                if any(processor_term in product.get('title', '').lower() for product in products for processor_term in ["processor", "intel", "amd", "celeron", "core"]):
+                    response += "| Processor | "
+                    for product in products:
+                        title = product.get('title', '').lower()
+                        # Try to extract processor info with a more flexible pattern
+                        processor_match = re.search(r'((?:intel|amd|ryzen|celeron|core)\s+[^\s,]+(?:\s+[^\s,]+)?)', title, re.IGNORECASE)
+                        processor = processor_match.group(1) if processor_match else "N/A"
+                        response += f"{processor} | "
+                    response += "\n"
+                
+                response += "\nFor a more detailed comparison with in-depth specifications and review analysis, I would need to access the product pages directly.\n"
+                response += "Would you like to see information about a specific product or try a different search?"
+                
+                self.conversation_history.append({"role": "assistant", "content": response})
+                return {"response": response}
+            
             # Research all products if needed
             researched_products = []
-            for product in products:
+            for product in valid_products:
                 product_link = product.get("link", "")
                 if not product_link:
                     logger.warning(f"Missing link for product: {product.get('title', 'Unknown')}")
@@ -398,8 +583,8 @@ class ConversationManager:
                 if isinstance(best_choice, dict) and "product_index" in best_choice:
                     best_idx = best_choice.get("product_index", 0) - 1
                 
-                if 0 <= best_idx < len(products):
-                    best_product = products[best_idx]
+                if 0 <= best_idx < len(researched_products):
+                    best_product = researched_products[best_idx]
                     response += f"### 🏆 Best Overall Choice: {best_product.get('title', 'Product ' + str(best_idx+1))}\n"
                     
                     if isinstance(best_choice, dict) and "reason" in best_choice:
@@ -416,8 +601,8 @@ class ConversationManager:
                 if isinstance(value_choice, dict) and "product_index" in value_choice:
                     value_idx = value_choice.get("product_index", 0) - 1
                 
-                if 0 <= value_idx < len(products):
-                    value_product = products[value_idx]
+                if 0 <= value_idx < len(researched_products):
+                    value_product = researched_products[value_idx]
                     response += f"### 💰 Best Value Choice: {value_product.get('title', 'Product ' + str(value_idx+1))}\n"
                     
                     if isinstance(value_choice, dict) and "reason" in value_choice:
@@ -439,8 +624,8 @@ class ConversationManager:
                             if "winner_index" in feature:
                                 winner_idx = feature.get("winner_index", 0) - 1
                             
-                            if feature_name and 0 <= winner_idx < len(products):
-                                winner_product = products[winner_idx]
+                            if feature_name and 0 <= winner_idx < len(researched_products):
+                                winner_product = researched_products[winner_idx]
                                 winner_name = winner_product.get('title', f'Product {winner_idx+1}')
                                 # Shorten title if too long
                                 if len(winner_name) > 30:
@@ -455,7 +640,17 @@ class ConversationManager:
             if "reliability_comparison" in comparison:
                 response += "### Reliability Assessment\n"
                 if isinstance(comparison["reliability_comparison"], dict):
-                    response += json.dumps(comparison["reliability_comparison"]) + "\n\n"
+                    for product_idx, reliability in comparison["reliability_comparison"].items():
+                        try:
+                            idx = int(product_idx) - 1
+                            if 0 <= idx < len(researched_products):
+                                product_title = researched_products[idx].get('title')
+                                if len(product_title) > 30:
+                                    product_title = product_title[:27] + "..."
+                                response += f"• **{product_title}**: {reliability}\n"
+                        except:
+                            pass
+                    response += "\n"
                 else:
                     response += str(comparison["reliability_comparison"]) + "\n\n"
             
@@ -463,7 +658,17 @@ class ConversationManager:
             if "price_analysis" in comparison:
                 response += "### Price-to-Value Analysis\n"
                 if isinstance(comparison["price_analysis"], dict):
-                    response += json.dumps(comparison["price_analysis"]) + "\n\n"
+                    for product_idx, analysis in comparison["price_analysis"].items():
+                        try:
+                            idx = int(product_idx) - 1
+                            if 0 <= idx < len(researched_products):
+                                product_title = researched_products[idx].get('title')
+                                if len(product_title) > 30:
+                                    product_title = product_title[:27] + "..."
+                                response += f"• **{product_title}**: {analysis}\n"
+                        except:
+                            pass
+                    response += "\n"
                 else:
                     response += str(comparison["price_analysis"]) + "\n\n"
             
@@ -471,30 +676,37 @@ class ConversationManager:
             if "recommendation" in comparison:
                 response += "### Best For Different Users\n"
                 if isinstance(comparison["recommendation"], dict):
-                    response += json.dumps(comparison["recommendation"]) + "\n\n"
+                    for user_type, product_idx in comparison["recommendation"].items():
+                        try:
+                            idx = int(product_idx) - 1
+                            if 0 <= idx < len(researched_products):
+                                product_title = researched_products[idx].get('title')
+                                if len(product_title) > 30:
+                                    product_title = product_title[:27] + "..."
+                                response += f"• **{user_type}**: {product_title}\n"
+                        except:
+                            pass
+                    response += "\n"
                 else:
                     response += str(comparison["recommendation"]) + "\n\n"
             
             # Summary
             response += "### Summary\n"
-            for i, product in enumerate(products):
+            for i, product in enumerate(researched_products):
                 product_title = product.get('title', f'Product {i+1}')
                 # Shorten title if too long
                 if len(product_title) > 40:
                     product_title = product_title[:37] + "..."
                     
-                if i < len(researched_products):
-                    research = researched_products[i].get('research', {})
-                    pros = research.get('pros_cons', {}).get('pros', [])
-                    cons = research.get('pros_cons', {}).get('cons', [])
-                    
-                    response += f"**{product_title}**\n"
-                    if pros:
-                        response += f"*Pros*: {', '.join(pros[:2])}\n"
-                    if cons:
-                        response += f"*Cons*: {', '.join(cons[:2])}\n"
-                else:
-                    response += f"**{product_title}**\n"
+                research = product.get('research', {})
+                pros = research.get('pros_cons', {}).get('pros', [])
+                cons = research.get('pros_cons', {}).get('cons', [])
+                
+                response += f"**{product_title}**\n"
+                if pros:
+                    response += f"*Pros*: {', '.join(pros[:2])}\n"
+                if cons:
+                    response += f"*Cons*: {', '.join(cons[:2])}\n"
                     
                 response += "\n"
             
