@@ -1,4 +1,4 @@
-# Amazon Shopping Assistant - Design Doc
+# Amazon Shopping Assistant - Design Doc - Tyler Corliss
 
 ## Overview
 This doc outlines the approach for the Amazon Shopping Assistant, a truly autonomous agent capable of performing complex shopping research across multiple products. I started with a straightforward v0 implementation and enhanced it in v1 with features beyond Amazon's standard filters. Now v2 introduces deep product research capabilities and agentic behavior.
@@ -148,7 +148,7 @@ Success criteria: ✓ Makes decisions similar to a knowledgeable shopper
 - Social proof integration
 - Voice interface
 - AR integration for physical shopping
-Timeline: Probably 8 weeks
+Timeline: Probably 2 weeks
 Success criteria: Becomes preferred shopping method for repeat users
 
 The critical path really follows:
@@ -252,16 +252,16 @@ Key metrics I'm tracking:
 ## Key Challenges & Solutions
 
 ### Dynamic Layout
-**Solution**: Multiple fallback selectors in priority order with intelligent recovery
+Solution: Multiple fallback selectors in priority order with intelligent recovery
 
 ### Detection Risk
-**Solution**: Human-like interaction patterns, session rotation, distributed traffic
+Solution: Human-like interaction patterns, session rotation, distributed traffic
 
 ### Advanced Filtering Beyond Amazon's UI
-**Solution**: Rich parameter extraction with post-filtering
+Solution: Rich parameter extraction with post-filtering
 
 ### Ambiguous Queries
-**Solution**: Conservative parsing with fallbacks and suggestions
+Solution: Conservative parsing with fallbacks and suggestions
 
 ### Scaling Challenges
 - Serverless architecture for handling traffic spikes
